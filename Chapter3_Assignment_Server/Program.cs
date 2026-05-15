@@ -1,71 +1,51 @@
 ﻿using System.Net;
 using System.Net.Sockets;
 using System.Text;
-
-class SimpleServer
+namespace Chapter3_Assignment_Server
 {
-    static void Main()
+    class Program
     {
-        ClientHandler clientHandler = new ClientHandler();
+        private static readonly List<ClientHandler> clients;
 
-        int port = 8888;
-        Socket mListener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        private static readonly object clientsLock = new object();
 
-        mListener.Bind(new IPEndPoint(IPAddress.Any, port));
-
-        mListener.Listen(5);
-
-
-        while (true)
+        static void Main()
         {
-            Socket? clientSocket = mListener.Accept();
-            if(clientSocket != null)
+
+        }
+
+        public static void BroadcastMessage(string message, ClientHandler sender)
+        {
+            lock (clientsLock)
             {
-                clientHandler.AddClient(clientSocket);
+                foreach (ClientHandler client in clients)
+                {
+                    if (client == sender) continue;
+
+                    try
+                    {
+                        client.SendMessage(message);
+                    }
+                    catch (Exception ex) 
+                    {
+                        Console.WriteLine($"소켓 전송 오류: {ex.Message}");
+                    }
+                }
+            }
+            
+        }
+
+        public static void RemoveClient(ClientHandler handler)
+        {
+            lock (clientsLock)
+            {
+                if (clients.Contains(handler))
+                {
+                    clients.Remove(handler);
+                    Console.WriteLine($"클라이언트 제거 완료. 현재 클라이언트 수 {clients.Count}");
+                }
             }
         }
+
     }
 }
-
-public class ClientHandler
-{
-    List<Socket> _ClientSocketList = new List<Socket>();
-
-    private object obj = new object();
-
-    public void AddClient(Socket? newSocket)
-    {
-        if(newSocket != null)
-        {
-            lock (obj)
-            {
-                _ClientSocketList.Add(newSocket);
-
-                Thread newWorkerThread = new Thread(() => WorkerThread(newSocket));
-                newWorkerThread.IsBackground = true;
-                newWorkerThread.Start();
-            }
-        }
-    }
-
-    private void WorkerThread(Socket socket)
-    {
-        socket.Send(Encoding.UTF8.GetBytes("Welcome!!"));
-
-        while (true)
-        {
-            byte[] buffer = new byte[1024];
-
-            int readSize = socket.Receive(buffer);
-            if(readSize == 0)
-            {
-                Console.WriteLine("클라이언트 연결 종료");
-            }
-
-
-
-            Console.WriteLine(buffer);
-        }
-    }
-}
-
