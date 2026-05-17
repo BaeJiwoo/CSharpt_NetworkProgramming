@@ -17,6 +17,7 @@ namespace Chapter3_Assignment_Server
 
         bool isConnected;
 
+        Thread mThread;
 
         public ClientHandler(Socket socket)
         {
@@ -25,25 +26,54 @@ namespace Chapter3_Assignment_Server
             IPEndPoint? ipEndPoint = clientSocket.RemoteEndPoint as IPEndPoint;
             Console.WriteLine($"{ipEndPoint.Address}::{ipEndPoint.Port} 연결");
 
+            isConnected = true;
+
+            mThread = new Thread(() => HandleClient());
+            //mThread.IsBackground = true;
+            mThread.Start();
         }
 
         public void HandleClient()
         {
-            // WhileLoop으로 유저 정보 처리
-
-            while (isConnected)
+            try
             {
-                byte[] recvByte= new byte[1024];
+                // \n >> 를 제거하고 명확한 한 줄 문자열로 전송합니다.
+                SendMessage("닉네임을 입력하세요.");
 
+                byte[] recvByte = new byte[1024];
                 int readn = clientSocket.Receive(recvByte);
 
-                if (readn == 0) 
-                {
-                    Console.WriteLine("마 종료한다.");
-                    break;
-                }
+                if (readn == 0) return;
 
-                ProcessMessage(Encoding.UTF8.GetString(recvByte));
+                // 클라이언트가 보낸 닉네임에서 엔터(\r, \n)를 완벽히 제거
+                nickname = Encoding.UTF8.GetString(recvByte, 0, readn).Replace("\r", "").Replace("\n", "").Trim();
+
+                Program.BroadcastMessage($"[시스템] {nickname}님이 입장하셨습니다.", this);
+
+                while (isConnected)
+                {
+                    recvByte = new byte[1024];
+                    readn = clientSocket.Receive(recvByte);
+
+                    if (readn == 0) break;
+
+                    // 메시지에서도 엔터 공백 제거
+                    string message = Encoding.UTF8.GetString(recvByte, 0, readn).Replace("\r", "").Replace("\n", "").Trim();
+
+                    // 빈 메시지는 무시
+                    if (string.IsNullOrEmpty(message)) continue;
+
+                    ProcessMessage(message);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[에러] {nickname} 통신 에러: {ex.Message}");
+            }
+            finally
+            {
+                Program.BroadcastMessage($"[시스템] {nickname}님이 퇴장하셨습니다.", this);
+                Program.RemoveClient(this);
             }
         }
 
@@ -71,7 +101,7 @@ namespace Chapter3_Assignment_Server
 
         public void SendMessage(string message)
         {
-            if (isConnected) return;
+            if (!isConnected) return;
             // 서버가 클라에게 메시지 전송
             byte[] bytes= Encoding.UTF8.GetBytes(message);
             clientSocket.Send(bytes);
@@ -97,6 +127,15 @@ namespace Chapter3_Assignment_Server
                 }
 
                 Console.WriteLine($"클라이언트 연결 종료: {nickname}");
+            }
+        }
+
+        public void EndClient()
+        {
+            if (isConnected && mThread.IsAlive)
+            {
+                mThread.Join();
+                CloseConnection();
             }
         }
     }
